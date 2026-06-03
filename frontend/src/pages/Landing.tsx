@@ -1,22 +1,18 @@
-import { Button } from './ui/Button';
-import { Link } from 'react-router';
+import { Button } from '../components/ui/Button';
+import { Link } from 'react-router-dom';
 
 export default function Landing() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary to-secondary">
       <div className="max-w-6xl mx-auto px-4 py-20">
         <div className="text-center text-white">
-          <h1 className="text-5xl md:text-6xl font-bold mb-6">
-            Study in Germany
-          </h1>
+          <h1 className="text-5xl md:text-6xl font-bold mb-6">Study in Germany</h1>
           <p className="text-xl md:text-2xl mb-8 text-blue-100">
             Your AI-powered guide to studying at German universities
           </p>
           <div className="flex gap-4 justify-center">
             <Link to="/dashboard">
-              <Button className="bg-accent text-primary hover:bg-yellow-500">
-                Get Started
-              </Button>
+              <Button className="bg-accent text-primary hover:bg-yellow-500">Get Started</Button>
             </Link>
             <Button variant="outline" className="text-white border-white">
               Learn More

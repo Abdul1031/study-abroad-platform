@@ -1,4 +1,3 @@
-import { Link } from 'react-router';
 import { LogOut, Settings } from 'lucide-react';
 
 export default function Header() {

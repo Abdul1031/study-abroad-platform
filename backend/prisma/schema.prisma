@@ -31,7 +31,182 @@ model Student {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
+  // Relations
+  recommendationCache RecommendationCache?
+  savedUniversities   SavedUniversity[]
+  refreshTokens       RefreshToken[]
+
   @@index([email])
   @@index([degreeStatus])
   @@index([createdAt])
+}
+
+model University {
+  id                          String    @id @default(cuid())
+  name                        String    @unique
+  city                        String
+  state                       String
+  type                        String    // ENUM: PUBLIC, PRIVATE, TECHNICAL
+  foundedYear                 Int?
+  description                 String?   @db.Text
+  websiteUrl                  String?
+  logoUrl                     String?
+  
+  // Ranking & Fees
+  ranking                     Int?      // World ranking or national ranking
+  tuitionFeeEuros             Float?    // Per semester or per year
+  
+  // Application Deadlines
+  applicationDeadlineWinter   DateTime?
+  applicationDeadlineSummer   DateTime?
+  
+  // Admission Requirements
+  ieltsMinimum                Float?
+  toeflMinimum                Int?
+  gpaMinimum                  Float?
+  
+  // Campus Life
+  hasStudentDormitory         Boolean   @default(false)
+  averageRentEuros            Float?    // Average student rent in city
+  
+  // Location (for map integration later)
+  latitude                    Float?
+  longitude                   Float?
+  
+  // Data Management
+  isActive                    Boolean   @default(true)
+  lastScrapedAt               DateTime?
+  
+  // Timestamps
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  
+  // Relations
+  courses                     Course[]
+  tags                        Tag[]
+  savedUniversities           SavedUniversity[]
+  
+  @@index([city])
+  @@index([type])
+  @@index([ranking])
+  @@index([lastScrapedAt])
+}
+
+model Course {
+  id                          String    @id @default(cuid())
+  
+  // Basic Info
+  universityId                String
+  university                  University @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  
+  name                        String
+  degree                      String    // ENUM: BACHELOR, MASTER, PHD
+  field                       String    // ENUM: CS, ENGINEERING, BUSINESS, MEDICINE, DATA_SCIENCE, etc.
+  language                    String    // ENUM: ENGLISH, GERMAN, BILINGUAL
+  
+  // Program Details
+  durationSemesters           Int       // 6, 7, 8 for Bachelor; 2, 4 for Master
+  creditPoints                Int       // ECTS credits
+  
+  // Cost & Intake
+  tuitionFeeEuros             Float?    // Per semester
+  intakeWinter                Boolean   @default(true)
+  intakeSummer                Boolean   @default(false)
+  
+  // Deadlines
+  applicationDeadlineWinter   DateTime?
+  applicationDeadlineSummer   DateTime?
+  
+  // Admission Requirements
+  ieltsMinimum                Float?
+  gpaMinimum                  Float?
+  
+  // Content (stored as JSON)
+  curriculum                  Json?     // Array of modules/subjects
+  admissionRequirements       Json?     // Detailed requirements object
+  careerProspects             String[]  // Array of job roles
+  
+  // URLs
+  websiteUrl                  String?
+  programPageUrl              String?
+  
+  // Data Management
+  isActive                    Boolean   @default(true)
+  lastScrapedAt               DateTime?
+  
+  // Timestamps
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  
+  // Relations
+  savedUniversities           SavedUniversity[]
+  
+  @@unique([universityId, name]) // Can't have duplicate course names in same university
+  @@index([universityId])
+  @@index([field])
+  @@index([degree])
+  @@index([language])
+}
+
+model Tag {
+  id                          String    @id @default(cuid())
+  name                        String    @unique
+  category                    String    // ENUM: CITY, UNIVERSITY_TYPE, SPECIALTY, RANKING_TIER
+  
+  createdAt                   DateTime  @default(now())
+  
+  // Relations
+  universities                University[]
+  
+  @@index([category])
+}
+
+model RecommendationCache {
+  id                          String    @id @default(cuid())
+  studentId                   String    @unique
+  student                     Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  // Cached recommendation data
+  recommendations             Json      // Array of recommendation results
+  
+  // Metadata
+  generatedAt                 DateTime  @default(now())
+  expiresAt                   DateTime  // TTL for cache invalidation
+  
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+}
+
+model SavedUniversity {
+  id                          String    @id @default(cuid())
+  
+  studentId                   String
+  student                     Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  universityId                String
+  university                  University @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  
+  courseId                    String?
+  course                      Course?   @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  
+  savedAt                     DateTime  @default(now())
+  
+  @@unique([studentId, universityId, courseId]) // Can't save same combo twice
+  @@index([studentId])
+  @@index([universityId])
+}
+
+model RefreshToken {
+  id                          String    @id @default(cuid())
+  
+  studentId                   String
+  student                     Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  token                       String    @unique
+  expiresAt                   DateTime
+  
+  createdAt                   DateTime  @default(now())
+  
+  @@index([studentId])
+  @@index([expiresAt])
 }

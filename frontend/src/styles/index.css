@@ -7,9 +7,36 @@
 }
 
 body {
-  @apply bg-white text-gray-900 antialiased;
+  @apply bg-gray-50 text-gray-900 antialiased;
 }
 
 html {
   scroll-behavior: smooth;
+}
+
+/* ── Shimmer animation for ProgressBar ─────────────────────────────────── */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* ── Focus ring improvements ───────────────────────────────────────────── */
+:focus-visible {
+  outline-offset: 2px;
+}
+
+/* ── Smooth transitions for wizard step content ────────────────────────── */
+.wizard-step-enter {
+  opacity: 0;
+  transform: translateX(8px);
+}
+
+.wizard-step-enter-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 200ms ease-out, transform 200ms ease-out;
 }

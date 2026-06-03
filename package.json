@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "AI-powered Germany Study Abroad Platform",
   "private": true,
+  "packageManager": "npm@11.11.0",
   "workspaces": [
     "backend",
     "frontend"

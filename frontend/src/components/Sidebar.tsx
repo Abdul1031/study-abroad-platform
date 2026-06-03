@@ -1,13 +1,5 @@
-import { Link, useLocation } from 'react-router';
-import {
-  Home,
-  User,
-  BookOpen,
-  Calendar,
-  CheckCircle,
-  Menu,
-  X,
-} from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { Home, User, BookOpen, Calendar, CheckCircle, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 
 const navItems = [
@@ -60,9 +52,7 @@ export default function Sidebar() {
               to={href}
               onClick={() => setIsOpen(false)}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                isActive(href)
-                  ? 'bg-primary text-white'
-                  : 'text-gray-700 hover:bg-gray-100'
+                isActive(href) ? 'bg-primary text-white' : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
               <Icon size={20} />
@@ -72,9 +62,7 @@ export default function Sidebar() {
         </nav>
 
         <div className="mt-8 pt-8 border-t border-gray-200">
-          <p className="text-xs text-gray-600 px-4">
-            Phase 1: Foundation Setup
-          </p>
+          <p className="text-xs text-gray-600 px-4">Phase 2: Profile Module</p>
         </div>
       </aside>
     </>
