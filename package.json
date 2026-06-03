@@ -1,0 +1,29 @@
+{
+  "name": "study-abroad-platform",
+  "version": "1.0.0",
+  "description": "AI-powered Germany Study Abroad Platform",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "type-check": "turbo run type-check",
+    "backend": "cd backend && npm run dev",
+    "frontend": "cd frontend && npm run dev",
+    "lint-staged": "lint-staged",
+    "prepare": "husky install",
+    "prisma:generate": "cd backend && prisma generate",
+    "prisma:migrate": "cd backend && prisma migrate dev",
+    "prisma:studio": "cd backend && prisma studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.2"
+  }
+}
