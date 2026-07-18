@@ -2,7 +2,6 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "Backend for Study Abroad Platform",
-  "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -30,8 +29,7 @@
     "express": "^4.18.2",
     "jsonwebtoken": "9.0.3",
     "node-cron": "^4.2.1",
-    "node-fetch": "^3.3.2",
-    "p-queue": "^9.3.0",
+    "p-queue": "^6.6.2",
     "pg": "^8.21.0",
     "zod": "^3.25.76"
   },
