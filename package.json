@@ -17,7 +17,7 @@
     "backend": "cd backend && npm run dev",
     "frontend": "cd frontend && npm run dev",
     "lint-staged": "lint-staged",
-    "prepare": "husky install",
+    "prepare": "husky install || true",
     "prisma:generate": "cd backend && prisma generate",
     "prisma:migrate": "cd backend && prisma migrate dev",
     "prisma:studio": "cd backend && prisma studio"
