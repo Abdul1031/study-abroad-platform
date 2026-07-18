@@ -197,9 +197,17 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 /**
  * Issues the CSRF cookie on any response that doesn't have one yet.
  * Deliberately NOT httpOnly: the double-submit pattern requires the SPA to
- * read the cookie and echo it back in the x-csrf-token header. SameSite=strict
- * plus the origin allowlist means a cross-site attacker can neither read nor
- * send it.
+ * read the cookie and echo it back in the x-csrf-token header.
+ *
+ * NOTE: the double-submit pattern only works when the frontend and API share
+ * a site — the frontend JS must be able to read a cookie the API set, which
+ * requires them to share a registrable domain. In this deployment (Vercel
+ * frontend, Render API — unrelated domains) that's structurally impossible:
+ * a cookie set by the API is stored under the API's domain and is invisible
+ * to `document.cookie` on the frontend's origin, no matter what cookie
+ * attributes are used. `csrfProtection()` below is therefore NOT applied
+ * globally (see app.ts) — kept here, still fully issuing/verifying tokens,
+ * for deployments where frontend and API do share a site.
  */
 export const issueCsrfToken: RequestHandler = (req, res, next) => {
   const cookies = (req as Request & { cookies?: Record<string, string> }).cookies;
@@ -219,6 +227,15 @@ export const issueCsrfToken: RequestHandler = (req, res, next) => {
  * Verifies the double-submit pair on every state-changing request.
  * `ignorePaths` lets pre-session endpoints (or webhook receivers authenticated
  * by other means) opt out.
+ *
+ * Not wired into the global middleware chain in this deployment — see the
+ * note on `issueCsrfToken` above for why, and why it's safe to omit: every
+ * mutating route already requires `requireAuth` (a Bearer token, which is
+ * never ambiently attached by the browser the way cookies are, so classic
+ * CSRF doesn't apply to it), and the CORS origin allowlist in
+ * `buildCorsOptions()` independently blocks any browser request — including
+ * a forged one to the cookie-authenticated `/auth/refresh` — from an origin
+ * other than the deployed frontend.
  */
 export function csrfProtection(ignorePaths: readonly string[] = []): RequestHandler {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -357,11 +374,21 @@ export function requireSelfOrAdmin(paramName = 'studentId'): RequestHandler {
 const REFRESH_TOKEN_TTL_DAYS = 7; // keep in sync with JWT_REFRESH_EXPIRY ('7d')
 export const REFRESH_COOKIE = 'refresh_token';
 
-/** Cookie options for the refresh token — scoped to the auth routes only. */
+/**
+ * Cookie options for the refresh token — scoped to the auth routes only.
+ *
+ * `sameSite: 'none'` in production because the frontend (Vercel) and this API
+ * (Render) live on unrelated domains — SameSite=strict/lax would make the
+ * browser silently withhold the cookie on every cross-origin request, which
+ * breaks refresh entirely. `secure: true` is required whenever sameSite is
+ * 'none' (and is already satisfied — both platforms are HTTPS-only). Locally,
+ * frontend and backend share the "localhost" site (same registrable domain,
+ * different port), so 'strict' is both stronger and sufficient there.
+ */
 export const refreshCookieOptions: CookieOptions = {
   httpOnly: true,
   secure: env.isProduction,
-  sameSite: 'strict',
+  sameSite: env.isProduction ? 'none' : 'strict',
   path: '/api/auth',
   maxAge: REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
 };

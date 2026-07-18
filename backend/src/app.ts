@@ -16,7 +16,6 @@ import {
   securityHeaders,
   apiRateLimiter,
   issueCsrfToken,
-  csrfProtection,
 } from './middleware/security.middleware';
 
 const app = express();
@@ -33,9 +32,10 @@ app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 app.use(cookieParser());
 app.use(issueCsrfToken);
 app.use('/api', apiRateLimiter);
-// Login/signup are pre-session (guarded by authRateLimiter instead);
-// everything else state-changing must present the double-submit CSRF pair.
-app.use(csrfProtection(['/api/auth/login', '/api/auth/signup']));
+// CSRF: not enforced here — the frontend (Vercel) and this API (Render) are
+// on unrelated domains, so the double-submit cookie pattern can't function
+// (see the comment on csrfProtection() in security.middleware.ts for why,
+// and why the CORS allowlist + Bearer-token auth already cover it).
 
 // Routes
 app.use('/api/health', healthRoutes);
