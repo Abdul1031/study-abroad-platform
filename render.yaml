@@ -16,7 +16,7 @@ services:
     name: study-abroad-api
     runtime: node
     plan: free
-    region: frankfurt
+    region: ohio # Render's US East region — matches the Neon DB in us-east-1 for low latency
     rootDir: backend
     buildCommand: >-
       cd .. &&
