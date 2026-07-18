@@ -34,8 +34,13 @@ export default function SignupPage() {
     try {
       await signup(form.email, form.password, form.fullName, form.country);
       navigate('/dashboard');
-    } catch {
-      setError('Signup failed. Please check your details and try again.');
+    } catch (err) {
+      // apiClient throws a plain { code, message, details } object, not an Error
+      const message =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: unknown }).message)
+          : undefined;
+      setError(message || 'Signup failed. Please check your details and try again.');
     } finally {
       setIsLoading(false);
     }

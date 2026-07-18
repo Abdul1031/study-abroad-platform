@@ -54,8 +54,13 @@ export default function LoginPage() {
     try {
       await login(email, password);
       navigate('/dashboard');
-    } catch {
-      setError('Invalid email or password. Please try again.');
+    } catch (err) {
+      // apiClient throws a plain { code, message, details } object, not an Error
+      const message =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: unknown }).message)
+          : undefined;
+      setError(message || 'Invalid email or password. Please try again.');
     } finally {
       setIsLoading(false);
     }
