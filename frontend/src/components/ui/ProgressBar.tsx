@@ -5,6 +5,8 @@ interface ProgressBarProps {
   totalSteps: number;
   className?: string;
   showLabel?: boolean;
+  /** Override the computed percentage — used by "Update Profile" flows to pin at 100%. */
+  percentageOverride?: number;
 }
 
 export const ProgressBar = ({
@@ -12,8 +14,18 @@ export const ProgressBar = ({
   totalSteps,
   className,
   showLabel = true,
+  percentageOverride,
 }: ProgressBarProps) => {
-  const percentage = Math.round((currentStep / totalSteps) * 100);
+  // Progress measures how far the user has advanced through the flow, so
+  // being ON the final step means 100% done. (currentStep / (totalSteps - 1))
+  // — step 0 → 0%, last step → 100%. Old formula counted "step number as
+  // fraction of total" which showed 0% on step 1 of 6 with everything filled.
+  const denominator = Math.max(1, totalSteps - 1);
+  const computed = Math.round((currentStep / denominator) * 100);
+  const percentage = Math.min(
+    100,
+    Math.max(0, percentageOverride !== undefined ? percentageOverride : computed)
+  );
 
   return (
     <div className={cn('w-full', className)}>

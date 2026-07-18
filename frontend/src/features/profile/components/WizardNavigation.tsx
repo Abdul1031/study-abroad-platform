@@ -5,6 +5,8 @@ interface WizardNavigationProps {
   isFirstStep: boolean;
   isLastStep: boolean;
   isSubmitting: boolean;
+  /** In "Update Profile" mode we relabel the submit button and use a neutral colour. */
+  isUpdateMode?: boolean;
   onPrevious: () => void;
   onNext: () => Promise<void>;
   onSubmit: () => Promise<void>;
@@ -18,6 +20,7 @@ export function WizardNavigation({
   isFirstStep,
   isLastStep,
   isSubmitting,
+  isUpdateMode = false,
   onPrevious,
   onNext,
   onSubmit,
@@ -41,10 +44,14 @@ export function WizardNavigation({
           variant="default"
           onClick={onSubmit}
           isLoading={isSubmitting}
-          className="gap-2 bg-green-600 hover:bg-green-700 focus-visible:ring-green-500 min-w-32"
+          className={
+            isUpdateMode
+              ? 'gap-2 min-w-32'
+              : 'gap-2 bg-green-600 hover:bg-green-700 focus-visible:ring-green-500 min-w-32'
+          }
         >
           {!isSubmitting && <CheckCircle className="w-4 h-4" aria-hidden="true" />}
-          Submit Profile
+          {isUpdateMode ? 'Update Profile' : 'Submit Profile'}
         </Button>
       ) : (
         <Button

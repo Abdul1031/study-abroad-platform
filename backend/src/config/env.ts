@@ -15,3 +15,13 @@ export const env = {
   isDevelopment: getEnv('NODE_ENV', 'development') === 'development',
   isProduction: getEnv('NODE_ENV', 'development') === 'production',
 };
+
+import type { ScraperConfig } from '../services/scraper/scraper.types';
+
+export const scraperConfig: Partial<ScraperConfig> = {
+  requestTimeoutMs: parseInt(getEnv('SCRAPER_TIMEOUT_MS', '15000'), 10),
+  rateLimitMs: parseInt(getEnv('SCRAPER_RATE_LIMIT_MS', '2000'), 10),
+  maxRetries: parseInt(getEnv('SCRAPER_MAX_RETRIES', '3'), 10),
+  maxConcurrentRequests: parseInt(getEnv('SCRAPER_MAX_CONCURRENT', '5'), 10),
+  enabled: getEnv('SCRAPER_ENABLED', 'true') === 'true',
+};

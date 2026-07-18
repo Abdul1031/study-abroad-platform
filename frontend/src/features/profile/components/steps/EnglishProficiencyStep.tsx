@@ -151,6 +151,7 @@ export function EnglishProficiencyStep({ control }: EnglishProficiencyStepProps)
               options={IELTS_SCORE_OPTIONS}
               placeholder="Select your score..."
               required
+              valueAsNumber
               description="Select your overall band score (0.0 – 9.0)"
             />
           </div>
@@ -180,6 +181,7 @@ export function EnglishProficiencyStep({ control }: EnglishProficiencyStepProps)
             options={IELTS_SCORE_OPTIONS}
             placeholder="Select expected score..."
             required
+            valueAsNumber
             description="Your target overall band score"
           />
         </FormSection>

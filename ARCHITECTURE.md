@@ -1,381 +1,59 @@
-# Project Architecture
+# Architecture
 
-## Overview
+Quick orientation doc. For the full phase-by-phase build history see [`IMPLEMENTATION_SUMMARY.md`](./IMPLEMENTATION_SUMMARY.md); for the security/scaling/caching design see [`docs/ARCHITECTURE_V2.md`](./docs/ARCHITECTURE_V2.md).
 
-The Germany Study Abroad Platform is built as a **monorepo** using npm workspaces with separate frontend and backend packages. This architecture provides scalability, code reusability, and independent deployment.
+## Monorepo layout
 
-## High-Level Architecture
+npm workspaces + Turborepo, two packages: `backend/` (Express API) and `frontend/` (React SPA). No shared package yet — types are duplicated at the API boundary by design (Zod schemas on the backend, hand-written interfaces on the frontend), since the two evolve independently and a shared-types package would couple their release cadence.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    FRONTEND (React + Vite)              │
-│                                                          │
-│  ┌────────────────┬──────────────┬────────────────┐    │
-│  │   Pages        │  Components  │  Custom Hooks  │    │
-│  │  - Landing     │  - Header    │  - useHealth   │    │
-│  │  - Dashboard   │  - Sidebar   │  - useQuery*   │    │
-│  │  - Profile     │  - Card      │  - useForm*    │    │
-│  │  - Universities│  - Button    │                │    │
-│  │  - Timeline    │  - Input     │                │    │
-│  │  - Tracker     │  - Select    │                │    │
-│  └────────────────┴──────────────┴────────────────┘    │
-│                          ↓                               │
-│            API Layer (fetch/TanStack Query)             │
-└─────────────────────────────────────────────────────────┘
-                          ↓ HTTP/JSON
-        ┌─────────────────────────────────────┐
-        │  API Gateway / CORS Handler         │
-        └─────────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────┐
-│                 BACKEND (Express.js)                    │
-│                                                          │
-│  ┌───────────────────────────────────────────────┐     │
-│  │  Routes                                       │     │
-│  │  /api/health                                  │     │
-│  │  /api/students/* (future)                     │     │
-│  │  /api/universities/* (future)                 │     │
-│  └───────────────────────────────────────────────┘     │
-│                      ↓                                   │
-│  ┌───────────────────────────────────────────────┐     │
-│  │  Controllers (Business Logic)                 │     │
-│  │  - healthController                          │     │
-│  │  - studentController (future)                │     │
-│  │  - universityController (future)             │     │
-│  └───────────────────────────────────────────────┘     │
-│                      ↓                                   │
-│  ┌───────────────────────────────────────────────┐     │
-│  │  Middleware                                   │     │
-│  │  - errorHandler                              │     │
-│  │  - requestLogger (future)                    │     │
-│  │  - authentication (future)                   │     │
-│  └───────────────────────────────────────────────┘     │
-│                      ↓                                   │
-│  ┌───────────────────────────────────────────────┐     │
-│  │  ORM Layer (Prisma)                           │     │
-│  │  - Database abstractions                      │     │
-│  │  - Query builders                             │     │
-│  │  - Migrations                                 │     │
-│  └───────────────────────────────────────────────┘     │
-└─────────────────────────────────────────────────────────┘
-                          ↓
-        ┌─────────────────────────────────────┐
-        │     PostgreSQL Database             │
-        │     - Students                      │
-        │     - (Universities - future)       │
-        │     - (Applications - future)       │
-        └─────────────────────────────────────┘
-```
-
-## Frontend Architecture
-
-### Directory Structure
+## Request flow
 
 ```
-frontend/
-├── src/
-│   ├── components/           # Reusable React components
-│   │   ├── ui/              # UI components (Button, Input, Card)
-│   │   ├── Header.tsx       # Top header component
-│   │   ├── Sidebar.tsx      # Navigation sidebar
-│   │   └── Layout.tsx       # Main layout wrapper
-│   │
-│   ├── pages/               # Full-page components (route pages)
-│   │   ├── Landing.tsx      # Home/entry page
-│   │   ├── Dashboard.tsx    # Dashboard overview
-│   │   ├── Profile.tsx      # Student profile management
-│   │   ├── Universities.tsx # University browsing
-│   │   ├── Timeline.tsx     # Application timeline
-│   │   └── Tracker.tsx      # Application tracking
-│   │
-│   ├── hooks/               # Custom React hooks
-│   │   └── useHealth.ts     # API health check hook
-│   │
-│   ├── lib/                 # Utilities and library functions
-│   │   ├── api.ts          # API client functions
-│   │   ├── types.ts        # TypeScript interfaces
-│   │   └── utils.ts        # Helper functions
-│   │
-│   ├── styles/              # Global styles
-│   │   └── index.css       # Tailwind + global CSS
-│   │
-│   ├── App.tsx              # Main app component with routing
-│   └── main.tsx             # React entry point
-│
-├── index.html               # HTML template
-├── vite.config.ts          # Vite configuration
-├── tailwind.config.js      # Tailwind CSS configuration
-├── postcss.config.js       # PostCSS configuration
-└── tsconfig.json           # TypeScript configuration
+React SPA (Vite)
+   │ Axios: attaches Bearer token + CSRF header, auto-retries once on 401
+   │ via silent refresh-token rotation
+   ▼
+Express app.ts
+   │ securityHeaders → CORS (origin allowlist) → body limits → CSRF cookie
+   │ → rate limiter → CSRF verification (state-changing routes)
+   ▼
+Route → requireAuth [→ requireRole('ADMIN')] → Controller
+   ▼
+Service layer (business logic, e.g. UniversityRecommendationService)
+   │ reads through appCache (in-memory LRU, cache-aside, stampede-safe)
+   ▼
+Repository layer → Prisma Client → PostgreSQL
 ```
 
-### Component Hierarchy
+## Backend layers
 
-```
-<App>
-  ├── <Layout>
-  │   ├── <Sidebar>
-  │   ├── <Header>
-  │   └── <Outlet> (page component)
-  │       ├── <Landing>
-  │       ├── <Dashboard>
-  │       │   ├── <Card>
-  │       │   └── <Button>
-  │       ├── <Profile>
-  │       ├── <Universities>
-  │       ├── <Timeline>
-  │       └── <Tracker>
-```
+- **`routes/`** — thin Express routers; auth/RBAC/rate-limit middleware composed per-route.
+- **`controllers/`** — request/response shaping, Zod validation, error mapping.
+- **`services/`** — business logic. Notable ones:
+  - `university-recommendation.service.ts` — the scoring engine (academic fit, language, affordability, program alignment, preferences), cached per student.
+  - `cache/cache.service.ts` — generic cache-aside LRU with in-flight-loader dedup (prevents stampedes on hot keys).
+  - `scraper/scraper.queue.ts` — job queue wrapping the scraper orchestrator: per-key dedup, exponential backoff, dead-letter queue.
+- **`repositories/`** — Prisma query builders; the only layer that talks to the DB directly.
+- **`middleware/security.middleware.ts`** — CORS, CSP/security headers, rate limiting, CSRF double-submit, JWT verification + RBAC, and Refresh Token Rotation with reuse detection.
+- **`features/program-quality/`** — self-contained module: completeness scoring, validator (gates what becomes `isMatchEligible`), audit trail, admin review queue.
 
-### Data Flow
+## Data model (Prisma)
 
-```
-User Action
-    ↓
-Page Component
-    ↓
-Custom Hook (useHealth, useQuery)
-    ↓
-API Layer (lib/api.ts)
-    ↓
-TanStack Query Cache
-    ↓
-Backend API
-```
+Key models: `Student`, `University`, `Course`, `Application` (tracker), `RecommendationCache`, `SavedUniversity`, `RefreshToken`, plus the Phase-5 quality models `ProgramRequirement`/`ProgramModule`/`ProgramIntake`/`ProgramFee`/`ProgramHistory`/`ProgramReview`. Full schema: [`backend/prisma/schema.prisma`](./backend/prisma/schema.prisma).
 
-## Backend Architecture
+`University.type` is one of `UNIVERSITY` | `TECHNICAL_UNIVERSITY` | `APPLIED_SCIENCES` (all public institutions — no private universities in the catalog by design). `University.state` holds the English Bundesland name, grouped into regions on the frontend for the region filter.
 
-### Directory Structure
+## Frontend
 
-```
-backend/
-├── src/
-│   ├── controllers/        # Request handlers (business logic)
-│   │   └── healthController.ts
-│   │
-│   ├── routes/             # API endpoint definitions
-│   │   └── health.ts
-│   │
-│   ├── middleware/         # Express middleware
-│   │   └── errorHandler.ts
-│   │
-│   ├── utils/              # Utility functions
-│   │   └── logger.ts
-│   │
-│   ├── config/             # Configuration
-│   │   └── env.ts         # Environment variable handling
-│   │
-│   ├── app.ts              # Express app setup
-│   └── index.ts            # Server startup
-│
-├── prisma/
-│   └── schema.prisma      # Database schema
-│
-├── dist/                   # Compiled JavaScript
-└── package.json
-```
+Feature-folder structure under `src/features/` (auth, profile, universities, recommendations, tracker, admin, dashboard). Server state lives in TanStack Query; the only client state is UI-local (wizard step, filter drafts). Route-level code splitting via `React.lazy` keeps the initial bundle small. Framer Motion drives the fluid card/modal interactions (`layoutId` morphing, scroll-triggered stagger reveals, magnetic hover).
 
-### Request Flow
+## Security model
 
-```
-HTTP Request
-    ↓
-Express Middleware (CORS, bodyParser)
-    ↓
-Router (matches route)
-    ↓
-Controller (business logic)
-    ↓
-Prisma Client (database query)
-    ↓
-PostgreSQL Database
-    ↓
-Response JSON
-    ↓
-HTTP Response
-```
+- **Refresh Token Rotation**: every `/auth/refresh` call consumes the presented token and issues a new one atomically. A token reused after rotation (replay) revokes every session for that student — see `rotateRefreshToken()` in `security.middleware.ts`.
+- **CSRF**: double-submit cookie, verified on every non-GET request.
+- **RBAC**: `requireRole('ADMIN')` gates the `/quality` and `/scraper` route trees; `requireSelfOrAdmin` prevents students from reading each other's data.
+- **Rate limiting**: tiered — broad `/api` limiter, strict limiter on auth endpoints, very strict on expensive admin triggers (scraper run, review scan).
 
-### API Endpoints
+## Caching & invalidation
 
-**Current (Phase 1):**
-- `GET /api/health` - Health check
-
-**Future (Phase 2+):**
-- `POST /api/students` - Create student profile
-- `GET /api/students/:id` - Get student profile
-- `PUT /api/students/:id` - Update student profile
-- `GET /api/universities` - List universities
-- `GET /api/universities/:id` - Get university details
-- etc.
-
-## Database Schema
-
-### Current Model (Phase 1)
-
-```prisma
-Student {
-  id                  String  @id @default(cuid())
-  
-  // Personal Info
-  fullName            String
-  email               String  @unique
-  country             String
-  
-  // Academic Status
-  degreeStatus        String  // "completed" | "ongoing"
-  degree              String
-  specialization      String
-  
-  // For Ongoing Students
-  currentSemester     Int?
-  graduationDate      DateTime?
-  expectedCgpa        Float?
-  
-  // For Completed Students
-  cgpa                Float?
-  
-  // IELTS/TOEFL
-  ieltsScore          Float?
-  expectedIeltsScore  Float?
-  plannedIeltsDate    DateTime?
-  
-  // Preferences
-  budget              Float?
-  preferredIntake     String?
-  preferredCourse     String?
-  
-  // Timestamps
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-}
-```
-
-### Future Models
-
-- **University** - German universities and programs
-- **Application** - Student applications to universities
-- **Timeline** - Personalized timelines
-- **Document** - Application documents
-- **User** - Authentication and user accounts
-
-## Technology Choices & Rationale
-
-### Frontend
-
-| Technology | Why |
-|---|---|
-| React 19 | Latest version, excellent ecosystem, component reusability |
-| Vite | Fast dev server, optimized builds, modern bundler |
-| TypeScript | Type safety, better IDE support, fewer runtime errors |
-| Tailwind CSS | Utility-first, highly customizable, good for rapid UI |
-| React Router | Industry standard for SPAs, nested routing support |
-| TanStack Query | Efficient server state management, caching, sync |
-| React Hook Form | Lightweight, performant form handling |
-| Zod | Runtime schema validation, type inference |
-
-### Backend
-
-| Technology | Why |
-|---|---|
-| Node.js + Express | JavaScript ecosystem, lightweight, scalable |
-| TypeScript | Type safety for backend, consistency with frontend |
-| Prisma ORM | Type-safe, auto-migration, great DX |
-| PostgreSQL | Robust, scalable, excellent JSON support |
-| Zod | Shared validation with frontend |
-
-### Development
-
-| Technology | Why |
-|---|---|
-| npm Workspaces | Monorepo management, shared dependencies |
-| Turbo | Builds, parallelization, caching |
-| ESLint | Code quality, consistency |
-| Prettier | Code formatting, team alignment |
-| Husky | Git hooks automation |
-| lint-staged | Fast pre-commit checks |
-
-## Scalability Considerations
-
-### Current Foundation
-
-✅ Modular architecture with clear separation of concerns
-✅ TypeScript for type safety at scale
-✅ Prisma migrations for database versioning
-✅ API versioning ready (`/api/v1/`, `/api/v2/`)
-✅ Monorepo structure supports multiple services
-
-### Future Improvements
-
-- API rate limiting
-- Caching layer (Redis)
-- Database indexing strategy
-- Authentication & authorization
-- API documentation (OpenAPI/Swagger)
-- Containerization (Docker)
-- CI/CD pipeline
-
-## Code Organization Principles
-
-### DRY (Don't Repeat Yourself)
-- Shared types in `lib/types.ts`
-- Reusable UI components in `components/ui/`
-- Utility functions in `lib/utils.ts`
-
-### SOLID Principles
-- **Single Responsibility**: Controllers handle one domain
-- **Open/Closed**: Extensible without modification
-- **Liskov**: Consistent interface contracts
-- **Interface Segregation**: Minimal dependencies
-- **Dependency Inversion**: Abstract dependencies
-
-### Naming Conventions
-
-**Components**: PascalCase (Landing.tsx, Dashboard.tsx)
-**Hooks**: camelCase with 'use' prefix (useHealth.ts)
-**Utilities**: camelCase (formatDate.ts, parseUrl.ts)
-**Constants**: UPPER_SNAKE_CASE (API_BASE_URL)
-**Types/Interfaces**: PascalCase (Student, ApiResponse)
-
-## Performance Optimizations
-
-### Frontend
-- Code splitting with React Router
-- Image optimization with modern formats
-- CSS-in-JS with Tailwind (no unused styles)
-- API response caching with TanStack Query
-- Lazy loading for pages and components
-
-### Backend
-- Database indexing on frequently queried fields
-- Response compression with gzip
-- Connection pooling with Prisma
-- Async/await for non-blocking operations
-
-## Security Considerations
-
-### Current Foundation
-- CORS configuration
-- Environment variable handling
-- Type safety with TypeScript
-
-### Future Enhancements
-- JWT authentication
-- Input validation & sanitization
-- SQL injection prevention (Prisma ORM)
-- HTTPS/TLS
-- Rate limiting
-- CSRF protection
-- XSS prevention
-
----
-
-## Document Updates
-
-This architecture document should be updated when:
-- Adding new major components
-- Changing tech stack
-- Adding new API endpoints
-- Modifying database schema
-- Implementing new patterns
-
-Last Updated: January 2024
+Two hot read paths (`GET /universities`, `GET /courses`) sit behind a cache-aside LRU (60s TTL). Invalidated on: a completed scraper run (`courses:*`, `universities:*` prefixes dropped) and a profile save (that student's recommendation cache only). No manual cache-busting needed elsewhere.

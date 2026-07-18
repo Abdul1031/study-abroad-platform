@@ -1,17 +1,52 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import healthRoutes from './routes/health';
+import universityRoutes from './routes/university.routes';
+import courseRoutes from './routes/course.routes';
+import recommendationRoutes from './routes/recommendation.routes';
+import authRoutes from './routes/auth.routes';
+import profileRoutes from './routes/profile.routes';
+import applicationRoutes from './routes/application.routes';
+import scraperRoutes from './routes/scraper.routes';
+import { qualityRoutes } from './features/program-quality';
 import { errorHandler } from './middleware/errorHandler';
+import {
+  buildCorsOptions,
+  securityHeaders,
+  apiRateLimiter,
+  issueCsrfToken,
+  csrfProtection,
+} from './middleware/security.middleware';
 
 const app = express();
 
+// Trust the first reverse proxy (nginx/ALB) so req.ip is the real client IP
+// for rate limiting, not the proxy's address.
+app.set('trust proxy', 1);
+
 // Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(securityHeaders);
+app.use(cors(buildCorsOptions()));
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: true, limit: '100kb' }));
+app.use(cookieParser());
+app.use(issueCsrfToken);
+app.use('/api', apiRateLimiter);
+// Login/signup are pre-session (guarded by authRateLimiter instead);
+// everything else state-changing must present the double-submit CSRF pair.
+app.use(csrfProtection(['/api/auth/login', '/api/auth/signup']));
 
 // Routes
 app.use('/api/health', healthRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/profile', profileRoutes);
+app.use('/api/applications', applicationRoutes);
+app.use('/api/universities', universityRoutes);
+app.use('/api/courses', courseRoutes);
+app.use('/api/recommendations', recommendationRoutes);
+app.use('/api/scraper', scraperRoutes);
+app.use('/api/quality', qualityRoutes);
 
 // 404 handler
 app.use((req, res) => {

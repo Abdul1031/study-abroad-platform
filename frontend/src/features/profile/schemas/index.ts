@@ -1,5 +1,13 @@
 import { z } from 'zod';
 
+// Helper to preprocess form values: converts empty strings to undefined, strings to numbers
+const preprocessFormNumber = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((val) => {
+    if (val === '' || val === null || val === undefined) return undefined;
+    const num = Number(val);
+    return isNaN(num) ? val : num;
+  }, schema);
+
 // ─── Step 1: Personal Information ─────────────────────────────────────────────
 
 export const personalInfoSchema = z.object({
@@ -41,24 +49,30 @@ export const academicInfoSchema = z
       .min(2, 'Specialization must be at least 2 characters')
       .max(100, 'Specialization must be under 100 characters'),
     // Completed-only fields
-    finalCgpa: z
-      .number({ invalid_type_error: 'CGPA must be a number' })
-      .min(0, 'CGPA cannot be negative')
-      .max(4.0, 'CGPA cannot exceed 4.0')
-      .optional(),
+    finalCgpa: preprocessFormNumber(
+      z
+        .number({ invalid_type_error: 'CGPA must be a number' })
+        .min(0, 'CGPA cannot be negative')
+        .max(4.0, 'CGPA cannot exceed 4.0')
+        .optional()
+    ),
     // Ongoing-only fields
-    currentSemester: z
-      .number({ invalid_type_error: 'Semester must be a number' })
-      .int('Semester must be a whole number')
-      .min(1, 'Semester must be at least 1')
-      .max(12, 'Semester cannot exceed 12')
-      .optional(),
+    currentSemester: preprocessFormNumber(
+      z
+        .number({ invalid_type_error: 'Semester must be a number' })
+        .int('Semester must be a whole number')
+        .min(1, 'Semester must be at least 1')
+        .max(12, 'Semester cannot exceed 12')
+        .optional()
+    ),
     expectedGraduationDate: z.string().optional(),
-    expectedCgpa: z
-      .number({ invalid_type_error: 'Expected CGPA must be a number' })
-      .min(0, 'Expected CGPA cannot be negative')
-      .max(4.0, 'Expected CGPA cannot exceed 4.0')
-      .optional(),
+    expectedCgpa: preprocessFormNumber(
+      z
+        .number({ invalid_type_error: 'Expected CGPA must be a number' })
+        .min(0, 'Expected CGPA cannot be negative')
+        .max(4.0, 'Expected CGPA cannot exceed 4.0')
+        .optional()
+    ),
   })
   .superRefine((data, ctx) => {
     if (data.degreeStatus === 'completed') {
@@ -104,20 +118,24 @@ export const englishProficiencySchema = z
       required_error: 'Please select your IELTS status',
     }),
     // Completed-only
-    ieltsScore: z
-      .number({ invalid_type_error: 'IELTS score must be a number' })
-      .min(0, 'IELTS score cannot be less than 0')
-      .max(9, 'IELTS score cannot exceed 9')
-      .multipleOf(0.5, 'IELTS score must be in 0.5 increments (e.g. 6.0, 6.5, 7.0)')
-      .optional(),
+    ieltsScore: preprocessFormNumber(
+      z
+        .number({ invalid_type_error: 'IELTS score must be a number' })
+        .min(0, 'IELTS score cannot be less than 0')
+        .max(9, 'IELTS score cannot exceed 9')
+        .multipleOf(0.5, 'IELTS score must be in 0.5 increments (e.g. 6.0, 6.5, 7.0)')
+        .optional()
+    ),
     // Not-taken-only
     plannedIeltsDate: z.string().optional(),
-    expectedIeltsScore: z
-      .number({ invalid_type_error: 'Expected IELTS score must be a number' })
-      .min(0, 'Expected IELTS score cannot be less than 0')
-      .max(9, 'Expected IELTS score cannot exceed 9')
-      .multipleOf(0.5, 'Expected IELTS score must be in 0.5 increments')
-      .optional(),
+    expectedIeltsScore: preprocessFormNumber(
+      z
+        .number({ invalid_type_error: 'Expected IELTS score must be a number' })
+        .min(0, 'Expected IELTS score cannot be less than 0')
+        .max(9, 'Expected IELTS score cannot exceed 9')
+        .multipleOf(0.5, 'Expected IELTS score must be in 0.5 increments')
+        .optional()
+    ),
   })
   .superRefine((data, ctx) => {
     if (data.ieltsStatus === 'completed') {
@@ -158,10 +176,12 @@ export const preferencesSchema = z.object({
     .string()
     .min(2, 'Preferred course must be at least 2 characters')
     .max(100, 'Preferred course must be under 100 characters'),
-  budget: z
-    .number({ invalid_type_error: 'Budget must be a number' })
-    .positive('Budget must be a positive amount')
-    .max(500000, 'Budget seems too high — please check'),
+  budget: preprocessFormNumber(
+    z
+      .number({ invalid_type_error: 'Budget must be a number' })
+      .positive('Budget must be a positive amount')
+      .max(500000, 'Budget seems too high — please check')
+  ),
 });
 
 // ─── Combined Schema ───────────────────────────────────────────────────────────
@@ -172,18 +192,18 @@ export const studentProfileSchema = personalInfoSchema
     z.object({
       degree: z.enum(['bachelors', 'masters', 'phd', 'associate']),
       specialization: z.string().min(2).max(100),
-      finalCgpa: z.number().min(0).max(4.0).optional(),
-      currentSemester: z.number().int().min(1).max(12).optional(),
+      finalCgpa: preprocessFormNumber(z.number().min(0).max(4.0).optional()),
+      currentSemester: preprocessFormNumber(z.number().int().min(1).max(12).optional()),
       expectedGraduationDate: z.string().optional(),
-      expectedCgpa: z.number().min(0).max(4.0).optional(),
+      expectedCgpa: preprocessFormNumber(z.number().min(0).max(4.0).optional()),
     })
   )
   .merge(
     z.object({
       ieltsStatus: z.enum(['completed', 'not_taken']),
-      ieltsScore: z.number().min(0).max(9).optional(),
+      ieltsScore: preprocessFormNumber(z.number().min(0).max(9).optional()),
       plannedIeltsDate: z.string().optional(),
-      expectedIeltsScore: z.number().min(0).max(9).optional(),
+      expectedIeltsScore: preprocessFormNumber(z.number().min(0).max(9).optional()),
     })
   )
   .merge(preferencesSchema);

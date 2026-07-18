@@ -24,6 +24,7 @@ interface TextFieldProps<TFormValues extends FieldValues> extends BaseFieldProps
 interface SelectFieldProps<TFormValues extends FieldValues> extends BaseFieldProps<TFormValues> {
   type: 'select';
   options: readonly SelectOption[];
+  valueAsNumber?: boolean;
 }
 
 type FormFieldProps<TFormValues extends FieldValues> =
@@ -53,7 +54,7 @@ export function FormField<TFormValues extends FieldValues>({
         const errorMessage = fieldState.error?.message;
 
         if (rest.type === 'select') {
-          const { options } = rest as SelectFieldProps<TFormValues>;
+          const { options, valueAsNumber } = rest as SelectFieldProps<TFormValues>;
           return (
             <Select
               {...field}
@@ -65,7 +66,14 @@ export function FormField<TFormValues extends FieldValues>({
               required={required}
               className={className}
               value={field.value ?? ''}
-              onChange={(e) => field.onChange(e.target.value)}
+              onChange={(e) => {
+                if (valueAsNumber) {
+                  const num = parseFloat(e.target.value);
+                  field.onChange(isNaN(num) ? undefined : num);
+                } else {
+                  field.onChange(e.target.value);
+                }
+              }}
             />
           );
         }

@@ -1,12 +1,13 @@
+import { apiClient } from '@/lib/api';
 import { STORAGE_KEYS } from '../utils/constants';
 import type { ProfileServiceContract, StudentProfileFormData, ProfileDraft } from '../types';
 
-// ─── Local Storage Profile Service ────────────────────────────────────────────
-// Implements ProfileServiceContract using localStorage.
-// Swap this implementation for an API-based service in future phases
-// without changing any consuming components.
+// ─── Hybrid Profile Service ───────────────────────────────────────────────────
+// Drafts (work-in-progress wizard state) live in localStorage for instant,
+// offline-safe auto-save. The COMPLETED profile is persisted to the backend
+// (PUT /api/profile) so it survives refreshes, devices, and browsers.
 
-class LocalStorageProfileService implements ProfileServiceContract {
+class HybridProfileService implements ProfileServiceContract {
   private readonly draftKey = STORAGE_KEYS.PROFILE_DRAFT;
 
   async saveDraft(data: Partial<StudentProfileFormData>, currentStep: number): Promise<void> {
@@ -59,22 +60,33 @@ class LocalStorageProfileService implements ProfileServiceContract {
     }
   }
 
-  async submitProfile(_data: StudentProfileFormData): Promise<{ id: string }> {
-    // Mock submission — replace with API call in Phase 2
-    // Simulates network latency for realistic UX testing
-    await new Promise<void>((resolve) => setTimeout(resolve, 1500));
-
-    const mockId = `student_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-
-    // Clear draft on successful submission
+  async submitProfile(data: StudentProfileFormData): Promise<{ id: string }> {
+    const response = await apiClient.put<{ id: string }>('/profile', data);
+    // Draft is now superseded by the server copy
     await this.clearDraft();
+    return response.data;
+  }
 
-    return { id: mockId };
+  /**
+   * Load the saved profile from the backend, already in wizard-form shape.
+   * Returns null when the student hasn't completed onboarding yet.
+   */
+  async loadProfile(): Promise<Partial<StudentProfileFormData> | null> {
+    try {
+      const response = await apiClient.get<{
+        isComplete: boolean;
+        profile: Partial<StudentProfileFormData>;
+      }>('/profile');
+      if (!response.data.isComplete) return null;
+      return response.data.profile;
+    } catch {
+      // Unauthenticated or server unreachable — the wizard still works from draft
+      return null;
+    }
   }
 }
 
 // ─── Singleton Export ──────────────────────────────────────────────────────────
 // Export a singleton instance so all consumers share the same service.
-// Replace this with dependency injection when moving to backend.
 
-export const profileService: ProfileServiceContract = new LocalStorageProfileService();
+export const profileService = new HybridProfileService();

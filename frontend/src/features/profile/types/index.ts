@@ -50,6 +50,8 @@ export interface ProfileServiceContract {
   loadDraft(): Promise<ProfileDraft | null>;
   clearDraft(): Promise<void>;
   submitProfile(data: StudentProfileFormData): Promise<{ id: string }>;
+  /** Saved profile from the backend (null until onboarding is complete) */
+  loadProfile(): Promise<Partial<StudentProfileFormData> | null>;
 }
 
 // ─── Wizard State & Actions ───────────────────────────────────────────────────

@@ -1,12 +1,16 @@
 import { useCallback, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useQueryClient } from '@tanstack/react-query';
 import { profileService } from '../services/profileService';
 import { studentProfileSchema, stepSchemas } from '../schemas';
 import { useProfileWizard } from './useProfileWizard';
 import { useProfileDraft } from './useProfileDraft';
 import type { StudentProfileFormData, SubmitState, WizardState, WizardActions } from '../types';
 import { useState } from 'react';
+
+/** Index of the Review step in the wizard — landing spot for completed profiles. */
+const REVIEW_STEP = 5;
 
 // ─── useProfileForm ────────────────────────────────────────────────────────────
 // Orchestrator hook — composes useForm + useProfileWizard + useProfileDraft.
@@ -22,6 +26,8 @@ interface UseProfileFormReturn {
     isRestoring: boolean;
     clearDraft: () => Promise<void>;
   };
+  /** True once a completed profile has been fetched from the backend. */
+  isCompletedProfile: boolean;
   submitState: SubmitState;
   handleNext: () => Promise<void>;
   handlePrevious: () => void;
@@ -31,6 +37,8 @@ interface UseProfileFormReturn {
 
 export function useProfileForm(): UseProfileFormReturn {
   const [submitState, setSubmitState] = useState<SubmitState>({ status: 'idle' });
+  const [isCompletedProfile, setIsCompletedProfile] = useState(false);
+  const queryClient = useQueryClient();
 
   // RHF with Zod resolver for full schema (final submit validation)
   const form = useForm<StudentProfileFormData>({
@@ -64,12 +72,30 @@ export function useProfileForm(): UseProfileFormReturn {
   // Wizard step navigation
   const wizardNav = useProfileWizard(0);
 
-  // Restore saved draft into form on initial load
+  // Restore state on initial load: an in-progress draft wins (most recent
+  // intent); otherwise hydrate from the server-saved profile so refresh /
+  // cross-device flows land in Update mode instead of an empty wizard.
   useEffect(() => {
-    if (!isRestoring && loadedDraft) {
+    if (isRestoring) return;
+
+    if (loadedDraft) {
       form.reset({ ...form.getValues(), ...loadedDraft.data });
       wizardNav.goToStep(loadedDraft.currentStep);
+      return;
     }
+
+    let cancelled = false;
+    profileService.loadProfile().then((profile) => {
+      if (cancelled || !profile) return;
+      form.reset({ ...form.getValues(), ...profile });
+      setIsCompletedProfile(true);
+      // Skip the user past all 5 form steps — they've already filled every
+      // field. They can still click any step in the stepper to edit.
+      wizardNav.goToStep(REVIEW_STEP);
+    });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRestoring]);
 
@@ -127,13 +153,14 @@ export function useProfileForm(): UseProfileFormReturn {
 
   const handleGoToStep = useCallback(
     (step: number) => {
-      // Only allow going to completed steps
-      if (step < wizardNav.currentStep) {
+      // Editing a completed profile: every step is a valid destination —
+      // the user is amending known-good data, not filling in order.
+      if (isCompletedProfile || step < wizardNav.currentStep) {
         wizardNav.goToStep(step);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     },
-    [wizardNav]
+    [wizardNav, isCompletedProfile]
   );
 
   // ─── Form Submit ────────────────────────────────────────────────────────────
@@ -160,6 +187,15 @@ export function useProfileForm(): UseProfileFormReturn {
 
       await profileService.submitProfile(result.data);
       await clearDraft();
+      // Mark the form as an existing profile from here on so the wizard
+      // stays in Update mode (button label, stepper navigation).
+      setIsCompletedProfile(true);
+      // Bust the shared caches: Dashboard flips its CTA, and matches must
+      // recompute because the backend already dropped RecommendationCache
+      // for this student.
+      queryClient.invalidateQueries({ queryKey: ['profile-status'] });
+      queryClient.invalidateQueries({ queryKey: ['recommendations'] });
+      queryClient.invalidateQueries({ queryKey: ['featured-programs'] });
       setSubmitState({ status: 'success' });
     } catch {
       setSubmitState({
@@ -167,7 +203,7 @@ export function useProfileForm(): UseProfileFormReturn {
         error: 'Something went wrong. Please try again.',
       });
     }
-  }, [form, clearDraft]);
+  }, [form, clearDraft, queryClient]);
 
   return {
     form,
@@ -181,6 +217,7 @@ export function useProfileForm(): UseProfileFormReturn {
       goToStep: wizardNav.goToStep,
     },
     draft: { hasDraft, lastSavedAt, isRestoring, clearDraft },
+    isCompletedProfile,
     submitState,
     handleNext,
     handlePrevious,

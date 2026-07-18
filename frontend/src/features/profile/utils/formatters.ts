@@ -9,8 +9,10 @@ const eurFormatter = new Intl.NumberFormat('de-DE', {
   maximumFractionDigits: 0,
 });
 
-export function formatBudget(amount: number): string {
-  return eurFormatter.format(amount);
+export function formatBudget(amount: number | string): string {
+  const num = Number(amount);
+  if (isNaN(num)) return '—';
+  return eurFormatter.format(num);
 }
 
 // ─── Date Formatter ────────────────────────────────────────────────────────────
@@ -30,16 +32,20 @@ export function formatDate(dateStr: string): string {
 
 // ─── CGPA Formatter ────────────────────────────────────────────────────────────
 
-export function formatCgpa(cgpa: number | undefined): string {
-  if (cgpa === undefined || cgpa === null) return '—';
-  return `${cgpa.toFixed(2)} / 4.00`;
+export function formatCgpa(cgpa: number | string | undefined): string {
+  if (cgpa === undefined || cgpa === null || cgpa === '') return '—';
+  const num = Number(cgpa);
+  if (isNaN(num)) return '—';
+  return `${num.toFixed(2)} / 4.00`;
 }
 
 // ─── IELTS Score Formatter ─────────────────────────────────────────────────────
 
-export function formatIeltsScore(score: number | undefined): string {
-  if (score === undefined || score === null) return '—';
-  return `${score.toFixed(1)} / 9.0`;
+export function formatIeltsScore(score: number | string | undefined): string {
+  if (score === undefined || score === null || score === '') return '—';
+  const num = Number(score);
+  if (isNaN(num)) return '—';
+  return `${num.toFixed(1)} / 9.0`;
 }
 
 // ─── Label Mappers ─────────────────────────────────────────────────────────────

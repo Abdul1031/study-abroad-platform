@@ -1,438 +1,181 @@
-# Germany Study Abroad Platform
+# StudyAbroad.de — Germany Study Abroad Platform
 
-An AI-powered platform to help students plan and execute their study abroad journey in Germany.
+A full-stack platform that matches international students with German public universities based on their real academic profile — CGPA, language scores, budget, and subject preferences — and helps them track the application process end to end.
 
-## 📋 Project Overview
+175 public institutions across all 16 Bundesländer, a transparent university-level recommendation engine, an automated scraping pipeline with data-quality scoring, and a hardened auth layer with refresh-token rotation.
 
-This is **Phase 1** - Foundation Setup of the Germany Study Abroad Platform. The platform supports both completed and ongoing students with a scalable, production-ready architecture.
+## Table of contents
 
-## 🎯 Features (Phase 1)
+- [Features](#features)
+- [Tech stack](#tech-stack)
+- [Architecture](#architecture)
+- [Local setup](#local-setup)
+- [Environment variables](#environment-variables)
+- [Project structure](#project-structure)
+- [Available scripts](#available-scripts)
+- [API overview](#api-overview)
+- [Deployment](#deployment)
+- [License](#license)
 
-### Frontend
-- Responsive UI with React 19 and Vite
-- Multiple pages: Landing, Dashboard, Profile, Universities, Timeline, Tracker
-- Tailwind CSS for styling
-- React Router for navigation
-- TanStack Query for data fetching
-- React Hook Form for form handling
-- Zod for schema validation
-- Shadcn/UI component library
+## Features
 
-### Backend
-- Node.js + Express.js server
-- TypeScript for type safety
-- Prisma ORM with PostgreSQL
-- Clean, scalable architecture
-- Health check endpoint
-- Error handling middleware
-- Environment configuration
+**For students**
 
-### Database
-- PostgreSQL database
-- Prisma schema with Student model
-- Fields for both completed and ongoing students
+- 6-step profile wizard with localStorage draft auto-save and backend persistence (edit mode once submitted)
+- University-level recommendation engine — every match is scored 0–100 across academic fit, language, affordability, program alignment, and preference bonus, with plain-English reasons and a per-dimension breakdown
+- Catalog of 175 public German universities (traditional, technical, and applied sciences) with filters by institution type, region/Bundesland, degree level, field, language, and tuition
+- University detail pages with official website links, admission requirements, and program listings
+- Application tracker (Kanban-style: Not Started → In Progress → Submitted → Decision) backed by a real database, not mock data
 
-### Development Standards
-- ESLint + Prettier for code quality
-- Husky pre-commit hooks
-- lint-staged for automatic formatting
-- Git branch strategy
-- Comprehensive documentation
+**Platform / admin**
 
-## 🚀 Quick Start
+- JWT auth with **Refresh Token Rotation** and reuse detection — a replayed refresh token instantly revokes every session for that account
+- CSRF protection (double-submit cookie), rate limiting, and hardened response headers
+- Role-based access control (student vs. admin) enforced server-side on every sensitive route
+- Automated web scraper with a job queue (dedup, exponential backoff, dead-letter queue) and a weekly cron schedule
+- Data-quality layer: completeness scoring, staleness detection, immutable audit trail, and an admin review queue for flagged programs
+- Two-tier caching (in-memory LRU, cache-aside) on hot read endpoints, invalidated automatically after scrapes and profile edits
+
+## Tech stack
+
+**Frontend** — React 18 + TypeScript + Vite, Tailwind CSS, Framer Motion, TanStack Query, React Hook Form + Zod, React Router 6
+
+**Backend** — Node.js + Express + TypeScript, Prisma ORM + PostgreSQL, Zod validation, JWT + bcrypt, Cheerio (scraping), node-cron, p-queue
+
+**Tooling** — npm workspaces + Turborepo, ESLint + Prettier, Husky pre-commit hooks
+
+## Architecture
+
+See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full system design and [`docs/`](./docs) for deeper dives into the recommendation engine, scraper pipeline, and security model.
+
+```
+Browser (React SPA)
+   │  Axios + CSRF token + Bearer access token
+   ▼
+Express API  ──┬── Auth (JWT + RTR)
+                ├── Universities / Courses (cached, filtered, searched)
+                ├── Recommendations (university-level scoring engine)
+                ├── Applications (student-owned tracker)
+                ├── Profile (onboarding + edit)
+                └── Admin: Quality review queue + Scraper controls (RBAC-gated)
+   │
+   ▼
+Prisma ORM ──► PostgreSQL
+   ▲
+   │
+Scraper job queue (dedup + backoff + DLQ) ──► weekly cron + on-demand admin trigger
+```
+
+## Local setup
 
 ### Prerequisites
-- Node.js 18+ and npm/yarn
-- PostgreSQL database
-- Git
 
-### Installation
+- Node.js 20+ and npm
+- A PostgreSQL database (local install, Docker, or a free managed instance — see [Deployment](#deployment))
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd StudyAbroad
-   ```
+### Install & run
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+```bash
+git clone https://github.com/Abdul1031/study-abroad-platform.git
+cd study-abroad-platform
+npm install
 
-3. **Setup Environment Variables**
+# Backend env
+cp backend/.env.example backend/.env
+# edit backend/.env — set DATABASE_URL at minimum
 
-   Backend (`.env`):
-   ```bash
-   cp backend/.env.example backend/.env
-   # Edit backend/.env with your database URL
-   DATABASE_URL="postgresql://user:password@localhost:5432/study_abroad?schema=public"
-   NODE_ENV=development
-   PORT=5000
-   ```
+# Frontend env
+cp frontend/.env.example frontend/.env
 
-4. **Setup Database**
-   ```bash
-   # Generate Prisma client
-   npm run prisma:generate
+# Database
+npm run prisma:generate
+npm run prisma:migrate
 
-   # Run migrations
-   npm run prisma:migrate
-   ```
+# Seed 175 German public universities (idempotent — safe to re-run)
+cd backend && npx tsx prisma/seed_universities_de.ts && cd ..
 
-5. **Start Development Servers**
+# Run everything
+npm run dev
+```
 
-   ```bash
-   # Terminal 1: Start backend
-   npm run backend
+Frontend: http://localhost:3000 · Backend: http://localhost:5000/api/health
 
-   # Terminal 2: Start frontend
-   npm run frontend
-   ```
+## Environment variables
 
-   Or run both in parallel:
-   ```bash
-   npm run dev
-   ```
+See [`backend/.env.example`](./backend/.env.example) and [`frontend/.env.example`](./frontend/.env.example) for the full list with descriptions. The essentials:
 
-## 📁 Project Structure
+| Variable                  | Required         | Notes                                                                       |
+| ------------------------- | ---------------- | --------------------------------------------------------------------------- |
+| `DATABASE_URL`            | ✅               | PostgreSQL connection string                                                |
+| `JWT_SECRET`              | ✅ in production | 32+ random hex chars — the server refuses to boot in production without one |
+| `FRONTEND_URL`            | recommended      | Used for CORS allowlisting                                                  |
+| `ADMIN_EMAILS`            | optional         | Comma-separated list granted the admin role                                 |
+| `VITE_API_URL` (frontend) | recommended      | Points the SPA at your deployed API                                         |
+
+## Project structure
 
 ```
 StudyAbroad/
 ├── backend/
 │   ├── src/
-│   │   ├── controllers/      # Request handlers
-│   │   ├── middleware/       # Custom middleware
-│   │   ├── routes/           # API routes
-│   │   ├── utils/            # Utility functions
-│   │   ├── config/           # Configuration
-│   │   ├── app.ts            # Express app setup
-│   │   └── index.ts          # Server entry point
-│   ├── prisma/
-│   │   └── schema.prisma     # Database schema
-│   ├── package.json
-│   ├── tsconfig.json
-│   └── .env.example
+│   │   ├── controllers/       # Request handlers
+│   │   ├── services/          # Business logic (recommendations, cache, scraper queue…)
+│   │   ├── repositories/      # Data-access layer
+│   │   ├── routes/            # Express routers
+│   │   ├── middleware/        # Auth, security (CSRF/RTR/RBAC), error handling
+│   │   ├── features/
+│   │   │   └── program-quality/  # Completeness scoring, audit trail, review queue
+│   │   └── domain/             # Zod schemas & shared types
+│   └── prisma/
+│       ├── schema.prisma
+│       ├── migrations/
+│       └── seed_universities_de.ts
 ├── frontend/
-│   ├── src/
-│   │   ├── components/       # Reusable components
-│   │   ├── pages/            # Page components
-│   │   ├── hooks/            # Custom React hooks
-│   │   ├── lib/              # Utilities and types
-│   │   ├── styles/           # Global styles
-│   │   ├── App.tsx           # Main app component
-│   │   └── main.tsx          # React entry point
-│   ├── index.html
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── vite.config.ts
-│   └── tailwind.config.js
-├── package.json              # Root workspace config
-├── tsconfig.base.json        # Base TypeScript config
-├── .eslintrc.json            # ESLint configuration
-├── .prettierrc.json          # Prettier configuration
-└── README.md
+│   └── src/
+│       ├── features/           # auth, profile, universities, recommendations, tracker, admin, dashboard
+│       ├── components/ui/      # Shared UI primitives
+│       └── pages/
+├── docs/                       # Architecture deep-dives
+└── .github/workflows/          # CI
 ```
 
-## 🛠️ Available Commands
+## Available scripts
 
-### Root Commands
+Run from the repo root (npm workspaces + Turborepo):
+
 ```bash
-# Development
-npm run dev              # Run all services in development mode
-npm run backend          # Run backend only
-npm run frontend         # Run frontend only
-
-# Build
-npm run build            # Build all packages
-
-# Code Quality
-npm run lint             # Lint all packages
-npm run format           # Format code with Prettier
-npm run type-check       # Run TypeScript type checking
+npm run dev          # backend + frontend, parallel
+npm run build         # build both workspaces
+npm run lint           # lint both workspaces
+npm run type-check     # tsc --noEmit for both workspaces
+npm run prisma:studio  # visual database browser
 ```
 
-### Backend Commands
-```bash
-cd backend
+## API overview
 
-# Development
-npm run dev              # Start development server with auto-reload
-npm run build            # Build TypeScript to JavaScript
-npm run start            # Start production server
+All endpoints are prefixed `/api`. Full reference in [`docs/API.md`](./docs/API.md).
 
-# Database
-npm run prisma:generate  # Generate Prisma client
-npm run prisma:migrate   # Run database migrations
-npm run prisma:studio    # Open Prisma Studio (visual editor)
+| Area            | Endpoints                                                                                                                                       |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth            | `POST /auth/signup`, `/login`, `/refresh` (rotating), `/logout`, `GET /auth/me`                                                                 |
+| Profile         | `GET/PUT /profile`                                                                                                                              |
+| Universities    | `GET /universities` (filters: `q`, `city`, `state`, `type`, `degree`, `field`, `language`, `tuitionMin/Max`, `sortBy`), `GET /universities/:id` |
+| Courses         | `GET /courses`, `GET /courses/:id`                                                                                                              |
+| Recommendations | `GET /recommendations/universities` (auth) — the scoring engine                                                                                 |
+| Applications    | `GET/POST /applications`, `PATCH/DELETE /applications/:id` (auth, student-owned)                                                                |
+| Admin — Quality | `GET /quality/metrics`, `/review-queue`, `PATCH .../approve\|reject` (admin only)                                                               |
+| Admin — Scraper | `POST /scraper/run`, `GET /scraper/status`, `/scraper/queue/dead-letters` (admin only)                                                          |
 
-# Code Quality
-npm run lint             # Run ESLint
-npm run format           # Format code with Prettier
-npm run type-check       # Check TypeScript types
-```
+## Deployment
 
-### Frontend Commands
-```bash
-cd frontend
+Full walkthrough in [`DEPLOYMENT.md`](./DEPLOYMENT.md) — targets three free-tier services:
 
-# Development
-npm run dev              # Start Vite dev server
-npm run build            # Build for production
-npm run preview          # Preview production build
+- **Neon** (PostgreSQL, free forever tier)
+- **Render** (backend API, free web service)
+- **Vercel** (frontend static hosting)
 
-# Code Quality
-npm run lint             # Run ESLint
-npm run format           # Format code with Prettier
-npm run type-check       # Check TypeScript types
-```
+`render.yaml` and the backend `Dockerfile` are ready to go; connect the repo and deploy.
 
-## 📚 Database Schema
+## License
 
-### Student Model
-```prisma
-model Student {
-  id                  String
-  fullName            String
-  email               String (unique)
-  country             String
-  degreeStatus        String          // "completed" or "ongoing"
-  degree              String
-  specialization      String
-  currentSemester     Int?
-  graduationDate      DateTime?
-  cgpa                Float?
-  expectedCgpa        Float?
-  ieltsScore          Float?
-  expectedIeltsScore  Float?
-  plannedIeltsDate    DateTime?
-  budget              Float?
-  preferredIntake     String?
-  preferredCourse     String?
-  createdAt           DateTime
-  updatedAt           DateTime
-}
-```
-
-## 🔌 API Endpoints
-
-### Health Check
-- **GET** `/api/health` - Check if API is running
-
-Response:
-```json
-{
-  "status": "success",
-  "message": "API is healthy",
-  "timestamp": "2024-01-15T10:30:00.000Z"
-}
-```
-
-## 🌳 Git Branch Strategy
-
-Follow this branch strategy:
-
-- `main` - Production-ready code
-- `develop` - Integration branch for features
-- `feature/*` - Feature branches (e.g., `feature/auth-setup`)
-- `bugfix/*` - Bug fix branches
-- `release/*` - Release preparation branches
-
-### Git Workflow
-
-1. Create feature branch from `develop`
-   ```bash
-   git checkout develop
-   git pull origin develop
-   git checkout -b feature/your-feature-name
-   ```
-
-2. Make changes and commit
-   ```bash
-   git add .
-   git commit -m "feat: add new feature description"
-   ```
-
-3. Push and create Pull Request
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-4. Merge to `develop` after review
-5. Release to `main` when ready
-
-## 📝 Commit Message Convention
-
-Follow Conventional Commits:
-
-- `feat:` New feature
-- `fix:` Bug fix
-- `docs:` Documentation changes
-- `style:` Code style changes
-- `refactor:` Code refactoring
-- `test:` Test additions/changes
-- `chore:` Build, dependencies, etc.
-
-Example:
-```bash
-git commit -m "feat: add student profile page"
-git commit -m "fix: resolve database connection error"
-```
-
-## 🔍 Code Quality
-
-### ESLint
-```bash
-npm run lint              # Check for errors
-npm run lint -- --fix     # Fix auto-fixable errors
-```
-
-### Prettier
-```bash
-npm run format            # Format all code
-```
-
-### Pre-commit Hooks
-Husky automatically runs:
-- ESLint checking
-- Prettier formatting
-- TypeScript type checking
-
-This happens automatically on `git commit`.
-
-## 🌍 Frontend Pages
-
-### Landing Page
-- Hero section with call-to-action
-- Feature overview
-- Entry point for new users
-
-### Dashboard
-- User overview and statistics
-- Quick action cards
-- API health status
-- Getting started guide
-
-### Profile
-- Student profile form
-- Academic information
-- Personal details
-- Status management
-
-### Universities
-- University search and filtering
-- Program browsing
-- Eligibility information
-- (Matching engine - future feature)
-
-### Timeline
-- Personalized application timeline
-- Milestone tracking
-- Deadline management
-- Step-by-step guidance
-
-### Tracker
-- Application status monitoring
-- University tracking
-- Document checklist
-- Interview scheduling
-
-## 🔒 Environment Variables
-
-### Backend
-```
-DATABASE_URL          # PostgreSQL connection string
-NODE_ENV              # development or production
-PORT                  # Server port (default: 5000)
-```
-
-### Frontend
-```
-VITE_API_URL          # Backend API URL (optional, defaults to http://localhost:5000/api)
-```
-
-## 🚀 Deployment
-
-### Backend
-```bash
-# Build
-npm run build
-
-# Set environment variables in production
-# Run migrations
-npm run prisma:migrate -- --skip-generate
-
-# Start server
-npm run start
-```
-
-### Frontend
-```bash
-# Build
-npm run build
-
-# Deploy dist folder to hosting service
-# (Vercel, Netlify, AWS S3, etc.)
-```
-
-## 📚 Tech Stack Details
-
-### Frontend Dependencies
-- **React 19**: Latest version for UI rendering
-- **Vite**: Fast build tool and dev server
-- **TypeScript**: Type safety
-- **Tailwind CSS**: Utility-first CSS framework
-- **React Router**: Client-side routing
-- **TanStack Query**: Server state management
-- **React Hook Form**: Efficient form handling
-- **Zod**: Runtime schema validation
-- **Lucide React**: Icon library
-
-### Backend Dependencies
-- **Express.js**: Web framework
-- **Prisma**: ORM and database toolkit
-- **PostgreSQL**: Database
-- **TypeScript**: Type safety
-- **Zod**: Schema validation
-
-### Development Tools
-- **ESLint**: Code linting
-- **Prettier**: Code formatting
-- **Husky**: Git hooks
-- **lint-staged**: Run linters on staged files
-- **Turbo**: Monorepo task runner
-
-## 🤝 Future Features (Not in Phase 1)
-
-- [ ] University matching engine
-- [ ] AI recommendations
-- [ ] SOP review
-- [ ] Resume review
-- [ ] Application tracker
-- [ ] Visa tracker
-- [ ] University scraping
-- [ ] Germany chatbot
-- [ ] User authentication
-- [ ] File uploads
-- [ ] Email notifications
-
-## 📖 Additional Resources
-
-- [React Documentation](https://react.dev)
-- [Vite Guide](https://vitejs.dev)
-- [TypeScript Handbook](https://www.typescriptlang.org/docs)
-- [Tailwind CSS](https://tailwindcss.com)
-- [Express.js Guide](https://expressjs.com)
-- [Prisma Documentation](https://www.prisma.io/docs)
-- [PostgreSQL Documentation](https://www.postgresql.org/docs)
-
-## 📄 License
-
-This project is proprietary and confidential.
-
-## 👥 Support
-
-For issues and questions, please create an issue in the repository.
-
----
-
-**Happy coding! 🎓🇩🇪**
+MIT — see [`LICENSE`](./LICENSE).

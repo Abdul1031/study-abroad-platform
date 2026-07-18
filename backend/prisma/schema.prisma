@@ -14,10 +14,11 @@ model Student {
   id                  String   @id @default(cuid())
   fullName            String
   email               String   @unique
-  country             String
-  degreeStatus        String   // "completed" or "ongoing"
-  degree              String
-  specialization      String
+  password            String
+  country             String?
+  degreeStatus        String?  // "completed" or "ongoing"
+  degree              String?
+  specialization      String?
   currentSemester     Int?
   graduationDate      DateTime?
   cgpa                Float?
@@ -35,6 +36,7 @@ model Student {
   recommendationCache RecommendationCache?
   savedUniversities   SavedUniversity[]
   refreshTokens       RefreshToken[]
+  applications        Application[]
 
   @@index([email])
   @@index([degreeStatus])
@@ -85,7 +87,8 @@ model University {
   courses                     Course[]
   tags                        Tag[]
   savedUniversities           SavedUniversity[]
-  
+  applications                Application[]
+
   @@index([city])
   @@index([type])
   @@index([ranking])
@@ -134,18 +137,42 @@ model Course {
   isActive                    Boolean   @default(true)
   lastScrapedAt               DateTime?
   
+  // ── Phase 5: Data Quality Fields ──────────────────────────────────────────
+  // Completeness & Eligibility
+  completenessScore           Float     @default(0)    // 0-100
+  isMatchEligible             Boolean   @default(false) // Set by ProgramValidator
+  matchingBlockers            String[]                  // Reasons why not eligible
+  matchingWarnings            String[]                  // Caution flags (still matchable)
+  
+  // Freshness / Lifecycle
+  firstSeenAt                 DateTime  @default(now())
+  lastVerifiedAt              DateTime  @default(now())
+  lastChangedAt               DateTime  @default(now())
+  isStale                     Boolean   @default(false) // True if lastVerifiedAt > 6 months old
+  
   // Timestamps
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
   
   // Relations
   savedUniversities           SavedUniversity[]
+  applications                Application[]
+
+  // Phase 5 Relations
+  requirements                ProgramRequirement?
+  modules                     ProgramModule[]
+  intakes                     ProgramIntake[]
+  fees                        ProgramFee[]
+  history                     ProgramHistory[]
+  review                      ProgramReview?
   
-  @@unique([universityId, name]) // Can't have duplicate course names in same university
+  @@unique([universityId, name])
   @@index([universityId])
   @@index([field])
   @@index([degree])
   @@index([language])
+  @@index([completenessScore, isMatchEligible])
+  @@index([lastVerifiedAt, isStale])
 }
 
 model Tag {
@@ -196,6 +223,34 @@ model SavedUniversity {
   @@index([universityId])
 }
 
+model Application {
+  id                          String    @id @default(cuid())
+
+  studentId                   String
+  student                     Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  // Optional links into the catalog; names are denormalized below so the
+  // tracker card survives course/university removal.
+  universityId                String?
+  university                  University? @relation(fields: [universityId], references: [id], onDelete: SetNull)
+  courseId                    String?
+  course                      Course?   @relation(fields: [courseId], references: [id], onDelete: SetNull)
+
+  universityName              String
+  programName                 String
+  degree                      String?
+
+  status                      String    @default("NOT_STARTED") // NOT_STARTED | IN_PROGRESS | SUBMITTED | DECISION
+  deadline                    DateTime?
+  notes                       String?   @db.Text
+
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  @@index([studentId, status])
+  @@index([studentId, deadline])
+}
+
 model RefreshToken {
   id                          String    @id @default(cuid())
   
@@ -209,4 +264,144 @@ model RefreshToken {
   
   @@index([studentId])
   @@index([expiresAt])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PHASE 5: Data Quality & Program Intelligence Models
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Granular eligibility requirements for a program
+model ProgramRequirement {
+  id                          String    @id @default(cuid())
+  
+  courseId                    String    @unique
+  course                      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  // Language Tests
+  ieltsMinimum                Float?
+  toeflMinimum                Float?
+  duolingoMinimum             Float?
+  
+  // Academic
+  gpaMinimum                  Float?
+  languageRequirements        String[]  // e.g. ["German B2", "English C1"]
+  
+  // Additional
+  additionalCertificates      String[]  // e.g. ["GMAT", "GRE", "APS"]
+  workExperienceRequired      Int?      // months
+  requiresUniAssist           Boolean   @default(false)
+  requiresAPS                 Boolean   @default(false)
+  isOpenAdmission             Boolean   @default(false)
+  greRequired                 Boolean   @default(false)
+  gmatRequired                Boolean   @default(false)
+  
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  
+  @@index([courseId])
+}
+
+/// Individual curriculum module for a program
+model ProgramModule {
+  id                          String    @id @default(cuid())
+  
+  courseId                    String
+  course                      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  name                        String    // e.g. "Advanced Algorithms"
+  description                 String?   @db.Text
+  creditPoints                Int?      // ECTS
+  semester                    Int?      // Which semester: 1, 2, 3, 4
+  isRequired                  Boolean   @default(true)
+  
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  
+  @@index([courseId, semester])
+}
+
+/// Intake-specific deadlines and capacity data
+model ProgramIntake {
+  id                              String    @id @default(cuid())
+  
+  courseId                        String
+  course                          Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  intakeSeason                    String    // ENUM: "WINTER" | "SUMMER"
+  applicationDeadline             DateTime
+  confirmationDeadline            DateTime?
+  enrollmentStartDate             DateTime?
+  enrollmentEndDate               DateTime?
+  capacity                        Int?      // Total spots
+  capacityReservedInternational   Int?      // International spots
+  
+  createdAt                       DateTime  @default(now())
+  updatedAt                       DateTime  @updatedAt
+  
+  @@unique([courseId, intakeSeason])
+  @@index([courseId])
+  @@index([applicationDeadline])
+}
+
+/// Fee breakdown per program (tuition, semester fee, admin fee, etc.)
+model ProgramFee {
+  id                          String    @id @default(cuid())
+  
+  courseId                    String
+  course                      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  feeType                     String    // ENUM: "TUITION" | "SEMESTER_FEE" | "ADMIN_FEE" | "OTHER"
+  amount                      Float
+  currency                    String    @default("EUR")
+  description                 String?
+  applicableIntakes           String[]  // e.g. ["WINTER", "SUMMER"]
+  
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  
+  @@index([courseId, feeType])
+}
+
+/// Immutable audit log — records every field-level change to a program
+model ProgramHistory {
+  id                          String    @id @default(cuid())
+  
+  courseId                    String
+  course                      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  fieldName                   String    // Which field changed
+  oldValue                    Json?     // Previous value (null if newly created)
+  newValue                    Json?     // New value
+  changedAt                   DateTime  @default(now())
+  changedBy                   String    // ENUM: "SCRAPER" | "ADMIN" | "SYSTEM" | "MIGRATION"
+  reason                      String?   // Human-readable reason
+  
+  // Read-only — never update a history record
+  createdAt                   DateTime  @default(now())
+  
+  @@index([courseId, changedAt])
+  @@index([fieldName])
+}
+
+/// Admin review queue — flags programs needing manual verification
+model ProgramReview {
+  id                          String    @id @default(cuid())
+  
+  courseId                    String    @unique
+  course                      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  reviewStatus                String    @default("FLAGGED") // ENUM: "FLAGGED" | "APPROVED" | "REJECTED" | "PENDING_VERIFICATION"
+  issues                      String[]  // reason codes, e.g. ["MISSING_IELTS", "MISSING_DEADLINE"]
+  completenessScore           Float     // snapshot of score at time of flagging
+  
+  flaggedAt                   DateTime  @default(now())
+  reviewedAt                  DateTime?
+  reviewedBy                  String?   // Admin user ID
+  notes                       String?   @db.Text
+  
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  
+  @@index([reviewStatus, flaggedAt])
+  @@index([completenessScore])
 }

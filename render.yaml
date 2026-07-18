@@ -1,0 +1,46 @@
+# Render Blueprint — deploys the backend API as a native Node web service
+# (no Docker layer, fastest cold-start on the free tier).
+#
+# Usage: Render dashboard → New → Blueprint → connect this repo → Render
+# reads this file automatically. After the first deploy, set the `sync: false`
+# variables below in the service's Environment tab (Render won't prompt for
+# them during blueprint creation on the free plan).
+#
+# Database: this blueprint does NOT provision Render Postgres (their free
+# tier is a 30-day trial, not a lasting free option). Use Neon or Supabase
+# instead — see DEPLOYMENT.md — and paste the connection string into
+# DATABASE_URL below.
+
+services:
+  - type: web
+    name: study-abroad-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    buildCommand: >-
+      cd .. &&
+      npm ci --workspace=backend --include-workspace-root &&
+      npx prisma generate --schema=backend/prisma/schema.prisma &&
+      npm run build --workspace=backend
+    startCommand: >-
+      npx prisma migrate deploy --schema=prisma/schema.prisma &&
+      node dist/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: DATABASE_URL
+        sync: false # paste your Neon/Supabase connection string here
+      - key: JWT_SECRET
+        generateValue: true # Render generates a strong random value
+      - key: ADMIN_EMAILS
+        sync: false # comma-separated emails to grant admin access
+      - key: FRONTEND_URL
+        sync: false # e.g. https://study-abroad-platform.vercel.app
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false # optional extra origins (preview deployments, etc.)
+      - key: SCRAPER_ENABLED
+        value: 'true'
